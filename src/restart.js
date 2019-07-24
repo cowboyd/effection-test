@@ -9,17 +9,14 @@ export function restartable(proc) {
     while (true) {
       let args = yield;
 
-      this.fork(function() {
-        //logic
-        current.halt();
-        current = this.fork(proc, args);
-      });
+      current.halt();
+      current = this.fork(proc, args)
     }
   });
 
   // performance function
   return {
-    task: loop,
+    teardown: () => loop.halt(),
     perform: (...args) => loop.resume(...args)
   }
 }
