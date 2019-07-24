@@ -1,21 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import logo from './logo.svg';
-import './App.css';
-import { timeout } from 'effection/src'
-import { restartable } from './restart'
-
+import React, { useState, useEffect, useRef } from "react";
+import "./App.css";
+import { timeout, call } from "effection/src";
+import { restartable } from "./restart";
 
 function useTask(proc, deps) {
-  let [ result, setResult ] = useState({});
-  let [ task ] = useState(() => restartable(function*() {
-    setResult(yield proc);
-  }));
-  useEffect(() => () => task.teardown(), [ task ]);
-  return [ task.perform, result ];
+  let render = { isFirst: true };
+  return useEagerTask(function*(...args) {
+    if (render.isFirst) {
+      render.isFirst = false;
+    } else {
+      return yield call(proc, ...args);
+    }
+  }, deps);
+}
+
+function useEagerTask(proc, deps) {
+  let [result, setResult] = useState();
+  let [task] = useState(() =>
+    restartable(function*(...args) {
+      setResult(yield call(proc, ...args));
+    })
+  );
+  useEffect(() => task.perform(...deps), deps);
+  useEffect(() => () => task.teardown(), [task]);
+  return [result, task.perform];
 }
 
 let searchGithub = value => execution => {
-  let url = `https://api.github.com/search/repositories?q=${value}+language:assembly&sort=stars&order=desc`
+  let url = `https://api.github.com/search/repositories?q=${value}+language:assembly&sort=stars&order=desc`;
   let controller = new AbortController();
   let { signal } = controller;
 
@@ -23,32 +35,39 @@ let searchGithub = value => execution => {
     .then(r => r.json())
     .then(json => execution.resume(json))
     .catch(err => {
-      if (err.name !== 'AbortError') {
-        execution.throw(err)
+      if (err.name !== "AbortError") {
+        execution.throw(err);
       }
     });
 
-  return () => controller.abort()
-}
-
+  return () => controller.abort();
+};
 
 function App() {
-  let [query, setQuery] = useState('')
+  let [query, setQuery] = useState("");
+  let ref = useRef({ firstRender: true });
 
-  let [ search, result ] = useTask(function*(query) {
-    yield timeout(1000)
-    return yield searchGithub(query)
-  }, [query]);
+  let [result] = useEagerTask(
+    function*(query, ref) {
+      if (ref.current.firstRender) {
+        ref.current.firstRender = false;
+      } else {
+        yield timeout(1000);
+        return yield searchGithub(query);
+      }
+    }, [query, ref]
+  );
 
   return (
     <div className="App">
       <h1>autocomplete</h1>
-      <input value={query} onChange={e => {
-          setQuery(e.target.value)
-          search(e.target.value)
-        }} />
-
-        {JSON.stringify(result)}
+      <input
+        value={query}
+        onChange={e => {
+          setQuery(e.target.value);
+        }}
+      />
+      {JSON.stringify(result)}
     </div>
   );
 }

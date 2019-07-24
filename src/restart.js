@@ -17,6 +17,6 @@ export function restartable(proc) {
   // performance function
   return {
     teardown: () => loop.halt(),
-    perform: (...args) => loop.resume(...args)
+    perform: (...args) => loop.resume(args)
   }
 }
