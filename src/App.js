@@ -1,73 +1,55 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import "./App.css";
-import { timeout, call } from "effection/src";
-import { restartable } from "./restart";
 
-function useTask(proc, deps) {
-  let render = { isFirst: true };
-  return useEagerTask(function*(...args) {
-    if (render.isFirst) {
-      render.isFirst = false;
-    } else {
-      return yield call(proc, ...args);
-    }
-  }, deps);
-}
+import { timeout } from "effection";
+import { fetchJSON } from './fetch';
+import { useTask } from './use-task';
 
-function useEagerTask(proc, deps) {
-  let [result, setResult] = useState();
-  let [task] = useState(() =>
-    restartable(function*(...args) {
-      setResult(yield call(proc, ...args));
-    })
-  );
-  useEffect(() => task.perform(...deps), deps);
-  useEffect(() => () => task.teardown(), [task]);
-  return [result, task.perform];
-}
-
-let searchGithub = value => execution => {
-  let url = `https://api.github.com/search/repositories?q=${value}+language:assembly&sort=stars&order=desc`;
-  let controller = new AbortController();
-  let { signal } = controller;
-
-  fetch(url, { signal })
-    .then(r => r.json())
-    .then(json => execution.resume(json))
-    .catch(err => {
-      if (err.name !== "AbortError") {
-        execution.throw(err);
-      }
-    });
-
-  return () => controller.abort();
-};
 
 function App() {
-  let [query, setQuery] = useState("");
-  let ref = useRef({ firstRender: true });
-
-  let [result] = useEagerTask(
-    function*(query, ref) {
-      if (ref.current.firstRender) {
-        ref.current.firstRender = false;
-      } else {
-        yield timeout(1000);
-        return yield searchGithub(query);
-      }
-    }, [query, ref]
-  );
+  let [ show, setShow ] = useState(true);
 
   return (
-    <div className="App">
-      <h1>autocomplete</h1>
-      <input
-        value={query}
-        onChange={e => {
-          setQuery(e.target.value);
-        }}
-      />
-      {JSON.stringify(result)}
+    <div>
+      <div style={{width: "500px", margin: "auto"}} className="App">
+        <div>
+          <button onClick={() => setShow(!show)}> {show ? "hide" : "show" } </button>
+          {show ? <Autocomplete/> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function Autocomplete() {
+  let [query, setQuery] = useState("");
+  let [isLoading, setIsLoading ] = useState(false);
+
+  let [ users = []] = useTask(function*(query) {
+    if (query.trim().length > 2) {
+      yield timeout(500);
+
+      let url = `https://api.github.com/search/users?q=${query}`;
+      try {
+        setIsLoading(true);
+        let data = yield fetchJSON(url);
+        return data.items;
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  }, [query]);
+
+  return (
+    <div>
+      <input value={query} onChange={e => setQuery(e.target.value)} autoComplete={"off"}></input>
+      { isLoading ? (<li>loading...</li>) : ""}
+      { users.length > 0 ?
+      <ul>
+        { users.map(user => <li key={user.login}><img className="avatar" width={25} height={25} alt="github user avatar" src={user.avatar_url}/>{user.login}</li>) }
+    </ul>
+        : null }
     </div>
   );
 }

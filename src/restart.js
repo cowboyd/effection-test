@@ -1,4 +1,4 @@
-import { execute } from 'effection/src'
+import { execute } from 'effection'
 
 export function restartable(proc) {
   let loop = execute(function*() {
